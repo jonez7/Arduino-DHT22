@@ -22,9 +22,8 @@
 Humidity and Temperature Sensor DHT22 info found at
 http://www.sparkfun.com/products/10167
 
-Version 0.6: 28 Nov 2014 by Jouni Seppanen
+Version 0.6: 01 Jul 2014 by Jouni Seppanen
 - Memory usage optimization
-- Dropped support for Fahrenheit
 
 Version 0.5: 15 Jan 2012 by Craig Ringer
 - Updated to build against Arduino 1.0
@@ -68,20 +67,6 @@ extern "C" {
 // This should be 40, but the sensor is adding an extra bit at the start
 #define DHT22_DATA_BIT_COUNT 41
 
-inline uint16_t Convert(uint8_t const * const data, uint8_t const numOfBits) {
-    uint8_t bit;
-    uint8_t startIdx = numOfBits - 1;
-    uint16_t result = 0;
-    
-    for(bit = 0; bit < numOfBits; bit++) {
-        if(data[bit + 1] > 11) {
-            result |= (1 << (startIdx - bit));
-        }
-    }
-    return result;
-}
-
-
 DHT22::DHT22(uint8_t const pin)
 {
     _bitmask         = digitalPinToBitMask(pin);
@@ -99,11 +84,10 @@ DHT22_ERROR_t DHT22::readData()
     uint8_t bitmask                  = _bitmask;
     volatile uint8_t *reg asm("r30") = _baseReg;
     uint8_t retryCount;
-    uint8_t bitTimes[DHT22_DATA_BIT_COUNT];
-    int currentHumidity    = 0;
-    int currentTemperature = 0;
-    uint8_t checkSum       = 0;
-    uint8_t checkSumCalc   = 0;
+    uint16_t currentHumidity    = 0;
+    uint16_t currentTemperature = 0;
+    uint8_t checkSum            = 0;
+    uint8_t checkSumCalc        = 0;
     uint8_t bit;
 
     // Pin needs to start HIGH, wait until it is HIGH with a timeout
@@ -126,7 +110,7 @@ DHT22_ERROR_t DHT22::readData()
     sei();
     delayMicroseconds(1100); // 1.1 ms
     cli();
-    DIRECT_MODE_INPUT(reg, bitmask);	// Switch back to input so pin can float
+    DIRECT_MODE_INPUT(reg, bitmask);    // Switch back to input so pin can float
     sei();
     // Find the start of the ACK Pulse
     retryCount = 0;
@@ -169,18 +153,21 @@ DHT22_ERROR_t DHT22::readData()
             retryCount++;
             delayMicroseconds(2);
         } while(DIRECT_READ(reg, bitmask));
-        bitTimes[bit] = retryCount;
+        // Now bitTimes have the number of retries (us *2)
+        // that were needed to find the end of each data bit
+        // Spec: 0 is 26 to 28 us
+        // Spec: 1 is 70 us
+        // retryCount <= 11 is a 0
+        // retryCount >  11 is a 1
+        // Note: the bits are offset by one from the data sheet, not sure why
+        if(bit >= 1 && bit < 17) {
+            currentHumidity |= ((retryCount > 11) << (16 - bit));
+        } else if(bit >= 17 && bit < 33) {
+            currentTemperature |= ((retryCount > 11) << (32 - bit));
+        } else {
+            checkSum |= ((retryCount > 11) << (40 - bit));
+        }
     }
-    // Now bitTimes have the number of retries (us *2)
-    // that were needed to find the end of each data bit
-    // Spec: 0 is 26 to 28 us
-    // Spec: 1 is 70 us
-    // bitTimes[x] <= 11 is a 0
-    // bitTimes[x] >  11 is a 1
-    // Note: the bits are offset by one from the data sheet, not sure why
-    currentHumidity    = Convert(&bitTimes[1], 16);
-    currentTemperature = Convert(&bitTimes[17], 16);
-    checkSum           = Convert(&bitTimes[33], 8);
 
     _lastHumidity = currentHumidity & 0x7FFF;
     if(currentTemperature & 0x8000) {
