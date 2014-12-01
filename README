@@ -11,6 +11,10 @@ To install this library for use with the Arduino IDE, copy it
 to the `libraries' folder and restart the IDE. For an example of
 how to use it, see File->Examples->DHT22->Serial .
 
+Version 0.6: 01 Jul 2014 by Jouni Seppanen
+Memory usage optimization
+Added Dew point calculation
+
 Version 0.5: 15-Jan-2012 by Craig Ringer
 Update to support Arduino 1.0
 Make accessors inlineable so they can be optimised away
